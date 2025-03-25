@@ -114,6 +114,147 @@ full_data <- full_data %>%
 cat("\n--- 1.3. VERTEILUNG NACH JAHREN ---\n")
 
 # Prüfen, ob die Variable wl_year existiert
+# Funktion zur Erstellung von Zeitreihen-Grafiken mit 5-Jahres-Intervallen
+create_time_series_plot <- function(data, y_var, y_label, title, fill_color, show_labels = TRUE) {
+  # Bestimme den Wertebereich der Jahre
+  min_year <- min(data$wl_year)
+  max_year <- max(data$wl_year)
+  
+  # Runde auf die nächsten 5-Jahres-Intervalle
+  start_year <- floor(min_year / 5) * 5
+  end_year <- ceiling(max_year / 5) * 5
+  
+  # Erstelle die Hauptjahre für die X-Achse (5-Jahres-Intervalle)
+  main_years <- seq(start_year, end_year, by = 5)
+  
+  p <- ggplot(data, aes(x = factor(wl_year), y = !!sym(y_var))) +
+    geom_bar(stat = "identity", fill = fill_color) +
+    labs(title = title, x = "Jahr", y = y_label) +
+    scale_x_discrete(
+      breaks = function(x) x,  # Alle Jahre als Striche anzeigen
+      labels = function(x) ifelse(as.numeric(x) %% 5 == 0, x, "")  # Nur 5-Jahres-Intervalle beschriften
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1,
+        size = ifelse(as.numeric(levels(factor(data$wl_year))) %% 5 == 0, 10, 6)
+      ),
+      panel.grid.minor.x = element_blank()
+    )
+  
+  # Füge Wertbeschriftungen hinzu, wenn gewünscht
+  if (show_labels) {
+    if (y_var == "Prozent_Verstorben") {
+      p <- p + geom_text(aes(label = paste0(!!sym(y_var), "%")), vjust = -0.5, size = 3)
+    } else {
+      p <- p + geom_text(aes(label = !!sym(y_var)), vjust = -0.5, size = 3)
+    }
+  }
+  
+  return(p)
+}
+
+# Funktion zur Erstellung von Zeitreihen-Grafiken für Kategorien
+create_category_time_series <- function(data, category_var, title_prefix) {
+  # Prüfen, ob die Kategorie-Variable existiert
+  if (!(category_var %in% names(data))) {
+    cat(paste0("Variable '", category_var, "' nicht im Datensatz vorhanden.\n"))
+    return(NULL)
+  }
+  
+  # Aggregiere Daten nach Jahr und Kategorie
+  category_year_distribution <- data %>%
+    group_by(wl_year, !!sym(category_var)) %>%
+    summarise(
+      Anzahl = n(),
+      Verstorben = sum(status == 1, na.rm = TRUE),
+      Prozent_Verstorben = round(Verstorben / Anzahl * 100, 1),
+      .groups = "drop"
+    )
+  
+  # Bestimme den Wertebereich der Jahre
+  min_year <- min(category_year_distribution$wl_year)
+  max_year <- max(category_year_distribution$wl_year)
+  
+  # Runde auf die nächsten 5-Jahres-Intervalle
+  start_year <- floor(min_year / 5) * 5
+  end_year <- ceiling(max_year / 5) * 5
+  
+  # Erstelle die Hauptjahre für die X-Achse (5-Jahres-Intervalle)
+  main_years <- seq(start_year, end_year, by = 5)
+  
+  # Erstelle eine Farbpalette basierend auf der Anzahl der Kategorien
+  categories <- unique(category_year_distribution[[category_var]])
+  n_categories <- length(categories)
+  
+  # Verschiedene Farbpaletten je nach Kategorie-Typ
+  if (category_var == "meld_cat") {
+    color_palette <- colorRampPalette(c("green", "yellow", "orange", "red"))(n_categories)
+  } else if (category_var == "bmi_cat") {
+    color_palette <- colorRampPalette(c("lightblue", "steelblue", "darkblue", "purple"))(n_categories)
+  } else if (category_var == "age_cat") {
+    color_palette <- colorRampPalette(c("lightgreen", "darkgreen"))(n_categories)
+  } else if (category_var == "BC_MELD_cat") {
+    color_palette <- colorRampPalette(c("pink", "red", "darkred", "purple"))(n_categories)
+  } else {
+    color_palette <- colorRampPalette(c("steelblue", "darkblue"))(n_categories)
+  }
+  
+  # Anzahl nach Jahren und Kategorien
+  p_category_count <- ggplot(category_year_distribution,
+                           aes(x = factor(wl_year), y = Anzahl, fill = !!sym(category_var))) +
+    geom_bar(stat = "identity", position = "stack") +
+    labs(title = paste0(title_prefix, " nach Jahren und ", category_var),
+         x = "Jahr", y = "Anzahl") +
+    scale_x_discrete(
+      breaks = function(x) x,  # Alle Jahre als Striche anzeigen
+      labels = function(x) ifelse(as.numeric(x) %% 5 == 0, x, "")  # Nur 5-Jahres-Intervalle beschriften
+    ) +
+    scale_fill_manual(values = color_palette) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1,
+        size = ifelse(as.numeric(levels(factor(category_year_distribution$wl_year))) %% 5 == 0, 10, 6)
+      ),
+      panel.grid.minor.x = element_blank(),
+      legend.title = element_blank()
+    )
+  
+  # Sterblichkeit nach Jahren und Kategorien
+  p_category_mortality <- ggplot(category_year_distribution,
+                                aes(x = factor(wl_year), y = Prozent_Verstorben, fill = !!sym(category_var))) +
+    geom_bar(stat = "identity", position = "dodge") +
+    labs(title = paste0("Sterblichkeit nach Jahren und ", category_var),
+         x = "Jahr", y = "Sterblichkeit (%)") +
+    scale_x_discrete(
+      breaks = function(x) x,  # Alle Jahre als Striche anzeigen
+      labels = function(x) ifelse(as.numeric(x) %% 5 == 0, x, "")  # Nur 5-Jahres-Intervalle beschriften
+    ) +
+    scale_fill_manual(values = color_palette) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1,
+        size = ifelse(as.numeric(levels(factor(category_year_distribution$wl_year))) %% 5 == 0, 10, 6)
+      ),
+      panel.grid.minor.x = element_blank(),
+      legend.title = element_blank()
+    )
+  
+  # Beide Plots in einer Liste zurückgeben
+  return(list(count = p_category_count, mortality = p_category_mortality))
+}
+
+# 1.3. VERTEILUNG NACH JAHREN
+# ----------------------------------------------------------------------------
+cat("\n--- 1.3. VERTEILUNG NACH JAHREN ---\n")
+
+# Prüfen, ob die Variable wl_year existiert
 if ("wl_year" %in% names(full_data)) {
   # Verteilung nach Jahren
   year_distribution <- full_data %>%
@@ -127,180 +268,46 @@ if ("wl_year" %in% names(full_data)) {
   cat("Verteilung nach Jahren:\n")
   print(year_distribution)
   
-  # Funktion zur Erstellung von Zeitreihen-Grafiken mit 5-Jahres-Intervallen
-  create_time_series_plot <- function(data, y_var, y_label, title, fill_color, show_labels = TRUE) {
-    # Bestimme den Wertebereich der Jahre
-    min_year <- min(data$wl_year)
-    max_year <- max(data$wl_year)
+  # 1.3.1 VERTEILUNG NACH JAHREN UND KATEGORIEN
+  cat("\n--- 1.3.1 VERTEILUNG NACH JAHREN UND KATEGORIEN ---\n")
+  
+  # Erstelle Grafiken für MELD-Kategorien
+  if ("meld_cat" %in% names(full_data)) {
+    cat("\nErstelle Grafiken für MELD-Kategorien...\n")
+    meld_plots <- create_category_time_series(full_data, "meld_cat", "Patienten")
     
-    # Runde auf die nächsten 5-Jahres-Intervalle
-    start_year <- floor(min_year / 5) * 5
-    end_year <- ceiling(max_year / 5) * 5
-    
-    # Erstelle die Hauptjahre für die X-Achse (5-Jahres-Intervalle)
-    main_years <- seq(start_year, end_year, by = 5)
-    
-    p <- ggplot(data, aes(x = factor(wl_year), y = !!sym(y_var))) +
-      geom_bar(stat = "identity", fill = fill_color) +
-      labs(title = title, x = "Jahr", y = y_label) +
-      scale_x_discrete(
-        breaks = function(x) x,  # Alle Jahre als Striche anzeigen
-        labels = function(x) ifelse(as.numeric(x) %% 5 == 0, x, "")  # Nur 5-Jahres-Intervalle beschriften
-      ) +
-      theme_minimal() +
-      theme(
-        axis.text.x = element_text(
-          angle = 45,
-          hjust = 1,
-          size = ifelse(as.numeric(levels(factor(data$wl_year))) %% 5 == 0, 10, 6)
-        ),
-        panel.grid.minor.x = element_blank()
-      )
-    
-    # Füge Wertbeschriftungen hinzu, wenn gewünscht
-    if (show_labels) {
-      if (y_var == "Prozent_Verstorben") {
-        p <- p + geom_text(aes(label = paste0(!!sym(y_var), "%")), vjust = -0.5, size = 3)
-      } else {
-        p <- p + geom_text(aes(label = !!sym(y_var)), vjust = -0.5, size = 3)
-        # 1.3.1 VERTEILUNG NACH JAHREN UND KATEGORIEN
-        # ----------------------------------------------------------------------------
-        cat("\n--- 1.3.1 VERTEILUNG NACH JAHREN UND KATEGORIEN ---\n")
-        
-        # Funktion zur Erstellung von Zeitreihen-Grafiken für Kategorien
-        create_category_time_series <- function(data, category_var, title_prefix) {
-          # Prüfen, ob die Kategorie-Variable existiert
-          if (!(category_var %in% names(data))) {
-            cat(paste0("Variable '", category_var, "' nicht im Datensatz vorhanden.\n"))
-            return(NULL)
-          }
-          
-          # Aggregiere Daten nach Jahr und Kategorie
-          category_year_distribution <- data %>%
-            group_by(wl_year, !!sym(category_var)) %>%
-            summarise(
-              Anzahl = n(),
-              Verstorben = sum(status == 1, na.rm = TRUE),
-              Prozent_Verstorben = round(Verstorben / Anzahl * 100, 1),
-              .groups = "drop"
-            )
-          
-          # Bestimme den Wertebereich der Jahre
-          min_year <- min(category_year_distribution$wl_year)
-          max_year <- max(category_year_distribution$wl_year)
-          
-          # Runde auf die nächsten 5-Jahres-Intervalle
-          start_year <- floor(min_year / 5) * 5
-          end_year <- ceiling(max_year / 5) * 5
-          
-          # Erstelle die Hauptjahre für die X-Achse (5-Jahres-Intervalle)
-          main_years <- seq(start_year, end_year, by = 5)
-          
-          # Erstelle eine Farbpalette basierend auf der Anzahl der Kategorien
-          categories <- unique(category_year_distribution[[category_var]])
-          n_categories <- length(categories)
-          
-          # Verschiedene Farbpaletten je nach Kategorie-Typ
-          if (category_var == "meld_cat") {
-            color_palette <- colorRampPalette(c("green", "yellow", "orange", "red"))(n_categories)
-          } else if (category_var == "bmi_cat") {
-            color_palette <- colorRampPalette(c("lightblue", "steelblue", "darkblue", "purple"))(n_categories)
-          } else if (category_var == "age_cat") {
-            color_palette <- colorRampPalette(c("lightgreen", "darkgreen"))(n_categories)
-          } else {
-            color_palette <- colorRampPalette(c("steelblue", "darkblue"))(n_categories)
-          }
-          
-          # Anzahl nach Jahren und Kategorien
-          p_category_count <- ggplot(category_year_distribution,
-                                    aes(x = factor(wl_year), y = Anzahl, fill = !!sym(category_var))) +
-            geom_bar(stat = "identity", position = "stack") +
-            labs(title = paste0(title_prefix, " nach Jahren und ", category_var),
-                 x = "Jahr", y = "Anzahl") +
-            scale_x_discrete(
-              breaks = function(x) x,  # Alle Jahre als Striche anzeigen
-              labels = function(x) ifelse(as.numeric(x) %% 5 == 0, x, "")  # Nur 5-Jahres-Intervalle beschriften
-            ) +
-            scale_fill_manual(values = color_palette) +
-            theme_minimal() +
-            theme(
-              axis.text.x = element_text(
-                angle = 45,
-                hjust = 1,
-                size = ifelse(as.numeric(levels(factor(category_year_distribution$wl_year))) %% 5 == 0, 10, 6)
-              ),
-              panel.grid.minor.x = element_blank(),
-              legend.title = element_blank()
-            )
-          
-          # Sterblichkeit nach Jahren und Kategorien
-          p_category_mortality <- ggplot(category_year_distribution,
-                                        aes(x = factor(wl_year), y = Prozent_Verstorben, fill = !!sym(category_var))) +
-            geom_bar(stat = "identity", position = "dodge") +
-            labs(title = paste0("Sterblichkeit nach Jahren und ", category_var),
-                 x = "Jahr", y = "Sterblichkeit (%)") +
-            scale_x_discrete(
-              breaks = function(x) x,  # Alle Jahre als Striche anzeigen
-              labels = function(x) ifelse(as.numeric(x) %% 5 == 0, x, "")  # Nur 5-Jahres-Intervalle beschriften
-            ) +
-            scale_fill_manual(values = color_palette) +
-            theme_minimal() +
-            theme(
-              axis.text.x = element_text(
-                angle = 45,
-                hjust = 1,
-                size = ifelse(as.numeric(levels(factor(category_year_distribution$wl_year))) %% 5 == 0, 10, 6)
-              ),
-              panel.grid.minor.x = element_blank(),
-              legend.title = element_blank()
-            )
-          
-          # Beide Plots in einer Liste zurückgeben
-          return(list(count = p_category_count, mortality = p_category_mortality))
-        }
-        
-        # Erstelle Grafiken für MELD-Kategorien
-        if ("meld_cat" %in% names(full_data)) {
-          cat("\nErstelle Grafiken für MELD-Kategorien...\n")
-          meld_plots <- create_category_time_series(full_data, "meld_cat", "Patienten")
-          
-          if (!is.null(meld_plots)) {
-            # Zeige und speichere die Plots
-            grid.arrange(meld_plots$count, meld_plots$mortality, ncol = 1)
-            ggsave("results/figures/patients_by_year_meld.png", meld_plots$count, width = 10, height = 6)
-            ggsave("results/figures/mortality_by_year_meld.png", meld_plots$mortality, width = 10, height = 6)
-          }
-        }
-        
-        # Erstelle Grafiken für BMI-Kategorien
-        if ("bmi_cat" %in% names(full_data)) {
-          cat("\nErstelle Grafiken für BMI-Kategorien...\n")
-          bmi_plots <- create_category_time_series(full_data, "bmi_cat", "Patienten")
-          
-          if (!is.null(bmi_plots)) {
-            # Zeige und speichere die Plots
-            grid.arrange(bmi_plots$count, bmi_plots$mortality, ncol = 1)
-            ggsave("results/figures/patients_by_year_bmi.png", bmi_plots$count, width = 10, height = 6)
-            ggsave("results/figures/mortality_by_year_bmi.png", bmi_plots$mortality, width = 10, height = 6)
-          }
-        }
-        
-        # Erstelle Grafiken für Alters-Kategorien
-        if ("age_cat" %in% names(full_data)) {
-          cat("\nErstelle Grafiken für Alters-Kategorien...\n")
-          age_plots <- create_category_time_series(full_data, "age_cat", "Patienten")
-          
-          if (!is.null(age_plots)) {
-            # Zeige und speichere die Plots
-            grid.arrange(age_plots$count, age_plots$mortality, ncol = 1)
-            ggsave("results/figures/patients_by_year_age.png", age_plots$count, width = 10, height = 6)
-            ggsave("results/figures/mortality_by_year_age.png", age_plots$mortality, width = 10, height = 6)
-          }
-        }
-      }
+    if (!is.null(meld_plots)) {
+      # Zeige und speichere die Plots
+      grid.arrange(meld_plots$count, meld_plots$mortality, ncol = 1)
+      ggsave("results/figures/patients_by_year_meld.png", meld_plots$count, width = 10, height = 6)
+      ggsave("results/figures/mortality_by_year_meld.png", meld_plots$mortality, width = 10, height = 6)
     }
+  }
+  
+  # Erstelle Grafiken für BMI-Kategorien
+  if ("bmi_cat" %in% names(full_data)) {
+    cat("\nErstelle Grafiken für BMI-Kategorien...\n")
+    bmi_plots <- create_category_time_series(full_data, "bmi_cat", "Patienten")
     
-    return(p)
+    if (!is.null(bmi_plots)) {
+      # Zeige und speichere die Plots
+      grid.arrange(bmi_plots$count, bmi_plots$mortality, ncol = 1)
+      ggsave("results/figures/patients_by_year_bmi.png", bmi_plots$count, width = 10, height = 6)
+      ggsave("results/figures/mortality_by_year_bmi.png", bmi_plots$mortality, width = 10, height = 6)
+    }
+  }
+  
+  # Erstelle Grafiken für Alters-Kategorien
+  if ("age_cat" %in% names(full_data)) {
+    cat("\nErstelle Grafiken für Alters-Kategorien...\n")
+    age_plots <- create_category_time_series(full_data, "age_cat", "Patienten")
+    
+    if (!is.null(age_plots)) {
+      # Zeige und speichere die Plots
+      grid.arrange(age_plots$count, age_plots$mortality, ncol = 1)
+      ggsave("results/figures/patients_by_year_age.png", age_plots$count, width = 10, height = 6)
+      ggsave("results/figures/mortality_by_year_age.png", age_plots$mortality, width = 10, height = 6)
+    }
   }
   
   # Visualisierung der Verteilung nach Jahren
@@ -682,8 +689,90 @@ cat(paste0("Niedriger SMI: ", sum(bca_subset$low_SMI), " (",
           round(mean(bca_subset$low_SMI) * 100, 1), "%)\n"))
 cat(paste0("Hoher IMAC: ", sum(bca_subset$high_IMAC), " (", 
           round(mean(bca_subset$high_IMAC) * 100, 1), "%)\n"))
-cat(paste0("Hoher VSR: ", sum(bca_subset$high_VSR), " (", 
+cat(paste0("Hoher VSR: ", sum(bca_subset$high_VSR), " (",
           round(mean(bca_subset$high_VSR) * 100, 1), "%)\n"))
+
+# Zeitreihen-Visualisierung der BCA-Indizes
+if ("wl_year" %in% names(bca_subset)) {
+  cat("\nErstelle Zeitreihen-Grafiken für BCA-Indizes...\n")
+  
+  # Aggregiere BCA-Indizes nach Jahren
+  bca_indices_year_distribution <- bca_subset %>%
+    group_by(wl_year) %>%
+    summarise(
+      Anzahl = n(),
+      Verstorben = sum(status == 1, na.rm = TRUE),
+      Prozent_Verstorben = round(Verstorben / Anzahl * 100, 1),
+      Durchschnitt_SMI = mean(SMI, na.rm = TRUE),
+      Durchschnitt_IMAC = mean(IMAC, na.rm = TRUE),
+      Durchschnitt_VSR = mean(VSR, na.rm = TRUE),
+      Prozent_Low_SMI = round(mean(low_SMI, na.rm = TRUE) * 100, 1),
+      Prozent_High_IMAC = round(mean(high_IMAC, na.rm = TRUE) * 100, 1),
+      Prozent_High_VSR = round(mean(high_VSR, na.rm = TRUE) * 100, 1),
+      .groups = "drop"
+    )
+  
+  # Erstelle Zeitreihen-Grafiken für BCA-Indizes
+  p_smi <- create_time_series_plot(
+    bca_indices_year_distribution,
+    "Durchschnitt_SMI",
+    "Durchschnittlicher SMI",
+    "Skeletal Muscle Index nach Jahren",
+    "darkblue"
+  )
+  
+  p_imac <- create_time_series_plot(
+    bca_indices_year_distribution,
+    "Durchschnitt_IMAC",
+    "Durchschnittlicher IMAC",
+    "Intramuscular Adipose Tissue Content nach Jahren",
+    "darkred"
+  )
+  
+  p_vsr <- create_time_series_plot(
+    bca_indices_year_distribution,
+    "Durchschnitt_VSR",
+    "Durchschnittlicher VSR",
+    "Visceral to Subcutaneous Adipose Tissue Ratio nach Jahren",
+    "darkgreen"
+  )
+  
+  # Erstelle Zeitreihen-Grafiken für die Kategorisierung
+  p_low_smi <- create_time_series_plot(
+    bca_indices_year_distribution,
+    "Prozent_Low_SMI",
+    "Prozent mit niedrigem SMI",
+    "Niedriger SMI nach Jahren (%)",
+    "steelblue"
+  )
+  
+  p_high_imac <- create_time_series_plot(
+    bca_indices_year_distribution,
+    "Prozent_High_IMAC",
+    "Prozent mit hohem IMAC",
+    "Hoher IMAC nach Jahren (%)",
+    "firebrick"
+  )
+  
+  p_high_vsr <- create_time_series_plot(
+    bca_indices_year_distribution,
+    "Prozent_High_VSR",
+    "Prozent mit hohem VSR",
+    "Hoher VSR nach Jahren (%)",
+    "forestgreen"
+  )
+  
+  # Zeige und speichere die Plots
+  grid.arrange(p_smi, p_imac, p_vsr, ncol = 1)
+  ggsave("results/figures/smi_by_year.png", p_smi, width = 10, height = 6)
+  ggsave("results/figures/imac_by_year.png", p_imac, width = 10, height = 6)
+  ggsave("results/figures/vsr_by_year.png", p_vsr, width = 10, height = 6)
+  
+  grid.arrange(p_low_smi, p_high_imac, p_high_vsr, ncol = 1)
+  ggsave("results/figures/low_smi_by_year.png", p_low_smi, width = 10, height = 6)
+  ggsave("results/figures/high_imac_by_year.png", p_high_imac, width = 10, height = 6)
+  ggsave("results/figures/high_vsr_by_year.png", p_high_vsr, width = 10, height = 6)
+}
 
 # 3.2. BERECHNUNG DES BC-MELD-SCORES
 # ----------------------------------------------------------------------------
@@ -730,6 +819,68 @@ boxplot(bca_subset$lab_meld, bca_subset$BC_MELD,
         names = c("MELD", "BC-MELD"),
         main = "Vergleich von MELD und BC-MELD",
         col = c("steelblue", "firebrick"))
+
+# Zeitreihen-Visualisierung des BC-MELD-Scores
+if ("wl_year" %in% names(bca_subset)) {
+  cat("\nErstelle Zeitreihen-Grafiken für BC-MELD-Score...\n")
+  
+  # Aggregiere BC-MELD-Daten nach Jahren
+  bc_meld_year_distribution <- bca_subset %>%
+    group_by(wl_year) %>%
+    summarise(
+      Anzahl = n(),
+      Verstorben = sum(status == 1, na.rm = TRUE),
+      Prozent_Verstorben = round(Verstorben / Anzahl * 100, 1),
+      Durchschnitt_MELD = mean(lab_meld, na.rm = TRUE),
+      Durchschnitt_BC_MELD = mean(BC_MELD, na.rm = TRUE),
+      Differenz_BC_MELD_MELD = mean(BC_MELD - lab_meld, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Erstelle Zeitreihen-Grafiken für BC-MELD-Score
+  p_meld <- create_time_series_plot(
+    bc_meld_year_distribution,
+    "Durchschnitt_MELD",
+    "Durchschnittlicher MELD-Score",
+    "MELD-Score nach Jahren",
+    "steelblue"
+  )
+  
+  p_bc_meld <- create_time_series_plot(
+    bc_meld_year_distribution,
+    "Durchschnitt_BC_MELD",
+    "Durchschnittlicher BC-MELD-Score",
+    "BC-MELD-Score nach Jahren",
+    "firebrick"
+  )
+  
+  p_diff_meld <- create_time_series_plot(
+    bc_meld_year_distribution,
+    "Differenz_BC_MELD_MELD",
+    "Durchschnittliche Differenz (BC-MELD - MELD)",
+    "Differenz zwischen BC-MELD und MELD nach Jahren",
+    "purple"
+  )
+  
+  # Zeige und speichere die Plots
+  grid.arrange(p_meld, p_bc_meld, p_diff_meld, ncol = 1)
+  ggsave("results/figures/meld_by_year.png", p_meld, width = 10, height = 6)
+  ggsave("results/figures/bc_meld_by_year.png", p_bc_meld, width = 10, height = 6)
+  ggsave("results/figures/meld_diff_by_year.png", p_diff_meld, width = 10, height = 6)
+  
+  # Erstelle auch Zeitreihen-Grafiken für BC-MELD-Kategorien
+  if ("BC_MELD_cat" %in% names(bca_subset)) {
+    cat("\nErstelle Grafiken für BC-MELD-Kategorien...\n")
+    bc_meld_cat_plots <- create_category_time_series(bca_subset, "BC_MELD_cat", "Patienten")
+    
+    if (!is.null(bc_meld_cat_plots)) {
+      # Zeige und speichere die Plots
+      grid.arrange(bc_meld_cat_plots$count, bc_meld_cat_plots$mortality, ncol = 1)
+      ggsave("results/figures/patients_by_year_bc_meld.png", bc_meld_cat_plots$count, width = 10, height = 6)
+      ggsave("results/figures/mortality_by_year_bc_meld.png", bc_meld_cat_plots$mortality, width = 10, height = 6)
+    }
+  }
+}
 
 # 3.3. ÜBERLEBENSANALYSE MIT BC-MELD
 # ----------------------------------------------------------------------------
