@@ -588,26 +588,51 @@ save_plots <- function(plots_list,
     for (format in formats) {
       file_path <- file.path(base_path, paste0(file_name, ".", format))
       
-      if (format == "png") {
-        # Save as PNG
-        ggsave(
-          filename = file_path,
-          plot = plot,
-          width = width,
-          height = height,
-          dpi = dpi
-        )
-        saved_files[[paste0(plot_name, "_png")]] <- file_path
-      } else if (format == "pdf") {
-        # Save as PDF
-        ggsave(
-          filename = file_path,
-          plot = plot,
-          width = width,
-          height = height,
-          device = cairo_pdf
-        )
-        saved_files[[paste0(plot_name, "_pdf")]] <- file_path
+      # Behandle verschiedene Plot-Typen
+      if (inherits(plot, "ggsurvplot")) {
+        # Extrahiere den eigentlichen ggplot aus dem ggsurvplot-Objekt
+        actual_plot <- plot$plot
+        
+        if (format == "png") {
+          ggsave(
+            filename = file_path,
+            plot = actual_plot,
+            width = width,
+            height = height,
+            dpi = dpi
+          )
+          saved_files[[paste0(plot_name, "_png")]] <- file_path
+        } else if (format == "pdf") {
+          ggsave(
+            filename = file_path,
+            plot = actual_plot,
+            width = width,
+            height = height,
+            device = cairo_pdf
+          )
+          saved_files[[paste0(plot_name, "_pdf")]] <- file_path
+        }
+      } else {
+        # Reguläre ggplot2 Plots
+        if (format == "png") {
+          ggsave(
+            filename = file_path,
+            plot = plot,
+            width = width,
+            height = height,
+            dpi = dpi
+          )
+          saved_files[[paste0(plot_name, "_png")]] <- file_path
+        } else if (format == "pdf") {
+          ggsave(
+            filename = file_path,
+            plot = plot,
+            width = width,
+            height = height,
+            device = cairo_pdf
+          )
+          saved_files[[paste0(plot_name, "_pdf")]] <- file_path
+        }
       }
     }
   }
@@ -668,9 +693,11 @@ save_interactive_plots <- function(plots_list,
 #' @param data Optional validation data frame
 #' @return A formatted table object
 create_model_comparison_table <- function(models_list,
-                                         metrics = c("cindex", "brier", "rsquared"),
-                                         times = c(90, 180, 365),
-                                         data = NULL) {
+                                          metrics = c("cindex", "brier", "rsquared"),
+                                          times = c(3, 6, 12),  # Standardwerte auf Monate angepasst
+                                          data = NULL,
+                                          time_var = "waitlist_time_months",  # Standardwert auf Monate
+                                          event_var = "status") {
   
   # Initialize results data frame
   results <- data.frame(
@@ -686,7 +713,7 @@ create_model_comparison_table <- function(models_list,
       results$`C-Index Upper` <- numeric()
     } else if (metric == "brier") {
       for (t in times) {
-        results[[paste0("Brier Score (", t, " days)")]] <- numeric()
+        results[[paste0("Brier Score (", t, " months)")]] <- numeric()
       }
     } else if (metric == "rsquared") {
       results$`R-Squared` <- numeric()
@@ -712,9 +739,9 @@ create_model_comparison_table <- function(models_list,
           for (t in times) {
             brier_name <- paste0("brier_", t)
             if (brier_name %in% names(model_metrics)) {
-              row[[paste0("Brier Score (", t, " days)")]] <- model_metrics[[brier_name]]
+              row[[paste0("Brier Score (", t, " months)")]] <- model_metrics[[brier_name]]
             } else {
-              row[[paste0("Brier Score (", t, " days)")]] <- NA
+              row[[paste0("Brier Score (", t, " months)")]] <- NA
             }
           }
         } else if (metric == "rsquared" && "rsquared" %in% names(model_metrics)) {
@@ -733,15 +760,65 @@ create_model_comparison_table <- function(models_list,
       # Create row for this model
       row <- data.frame(Model = model_name, stringsAsFactors = FALSE)
       
-      # Calculate metrics
-      model_metrics <- calculate_survival_metrics(
-        model = model,
-        data = data,
-        time_var = "waitlist_time_days",
-        event_var = "status",
-        times = times,
-        metrics = metrics
-      )
+      # Calculate metrics - Überprüfen, ob das Model ein String oder ein Modellobjekt ist
+      if (is.character(model)) {
+        # Fall: model ist ein Variablenname (String)
+        message("Variable als Modell erkannt: ", model)
+        
+        # Konkordanz direkt berechnen, wenn Variable im Datensatz existiert
+        model_metrics <- list()
+        
+        if (model %in% names(data)) {
+          # Berechne C-Index direkt mit concordance() Funktion
+          cindex_result <- tryCatch({
+            # Verwende die neuere concordance-Funktion
+            conc <- concordance(Surv(data[[time_var]], data[[event_var]]) ~ data[[model]])
+            
+            # Ergebnisse speichern
+            model_metrics$cindex <- conc$concordance
+            model_metrics$cindex_lower <- conc$concordance - 1.96 * sqrt(conc$var)
+            model_metrics$cindex_upper <- conc$concordance + 1.96 * sqrt(conc$var)
+            
+            message("C-Index für ", model, ": ", round(model_metrics$cindex, 3))
+            TRUE
+          }, error = function(e) {
+            warning("Fehler bei der Berechnung des C-Index für ", model, ": ", e$message)
+            FALSE
+          })
+          
+          # Wenn C-Index-Berechnung fehlschlägt, setze Platzhalter
+          if (!cindex_result) {
+            model_metrics$cindex <- NA
+            model_metrics$cindex_lower <- NA
+            model_metrics$cindex_upper <- NA
+          }
+          
+          # Für andere Metriken müssten wir ein Modell fitten - vereinfacht überspringen wir das hier
+          for (t in times) {
+            model_metrics[[paste0("brier_", t)]] <- NA
+          }
+          model_metrics$rsquared <- NA
+        } else {
+          warning("Variable ", model, " nicht im Datensatz gefunden")
+          model_metrics$cindex <- NA
+          model_metrics$cindex_lower <- NA
+          model_metrics$cindex_upper <- NA
+          for (t in times) {
+            model_metrics[[paste0("brier_", t)]] <- NA
+          }
+          model_metrics$rsquared <- NA
+        }
+      } else {
+        # Fall: model ist ein tatsächliches Modellobjekt
+        model_metrics <- calculate_survival_metrics(
+          model = model,
+          data = data,
+          time_var = time_var,  # Verwende den übergebenen Parameter!
+          event_var = event_var,
+          times = times,
+          metrics = metrics
+        )
+      }
       
       # Add metrics
       for (metric in metrics) {

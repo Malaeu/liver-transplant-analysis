@@ -1,3 +1,18 @@
+# 1. LOAD CLEAN DATASET --------------------------------------------------
+
+# Bereinigten Analysedatensatz laden
+message("Lade bereinigten Analysedatensatz...")
+analysis_data <- readRDS("analysis_dataset_clean.rds")
+message(paste0("Analysedatensatz geladen: ", nrow(analysis_data), " Zeilen, ", ncol(analysis_data), " Spalten"))
+
+# Überprüfen der Variablen im Datensatz
+message("Verfügbare Variablen im Analysedatensatz:")
+print(names(analysis_data))
+
+# Zusammenfassung des Datensatzes
+message("Zusammenfassung des Analysedatensatzes:")
+print(summary(analysis_data[, c("age", "sex", "bmi", "lab_meld", "status", "waitlist_time_months")]))
+
 # ============================================================================
 # LIVER TRANSPLANT WAITLIST SURVIVAL ANALYSIS
 # ============================================================================
@@ -364,7 +379,7 @@ train_data_clean <- prepare_ml_data(train_data)
 validation_data_clean <- prepare_ml_data(validation_data)
 
 # Fit AORSF model with hyperparameter tuning
-aorsf_formula <- "Surv(waitlist_time_months, status) ~ age.x + factor(sex) + bmi + lab_meld + muscle + sat + vat + imat + eat + pat + tat"
+aorsf_formula <- "Surv(waitlist_time_months, status) ~ age + factor(sex) + bmi + lab_meld"
 
 # Prüfe, ob alle Formel-Variablen im Datensatz vorhanden sind
 formula_vars <- c("waitlist_time_months", "status", "age.x", "sex", "bmi",

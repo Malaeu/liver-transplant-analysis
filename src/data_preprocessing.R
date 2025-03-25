@@ -234,12 +234,21 @@ preprocess_data <- function(data,
       for (var in vars_with_na) {
         if (is.numeric(processed_data[[var]])) {
           # For numeric variables, impute with median
-          processed_data[[var]][is.na(processed_data[[var]])] <- 
-            median(processed_data[[var]], na.rm = TRUE)
+          if (!all(is.na(processed_data[[var]]))) {  # Check if there are non-NA values
+            processed_data[[var]][is.na(processed_data[[var]])] <-
+              median(processed_data[[var]], na.rm = TRUE)
+          }
         } else {
           # For categorical variables, impute with mode
-          mode_value <- names(sort(table(processed_data[[var]]), decreasing = TRUE))[1]
-          processed_data[[var]][is.na(processed_data[[var]])] <- mode_value
+          if (!all(is.na(processed_data[[var]]))) {  # Check if there are non-NA values
+            mode_table <- table(processed_data[[var]])
+            if (length(mode_table) > 0) {
+              mode_value <- names(sort(mode_table, decreasing = TRUE))[1]
+              if (!is.null(mode_value) && length(mode_value) > 0) {
+                processed_data[[var]][is.na(processed_data[[var]])] <- mode_value
+              }
+            }
+          }
         }
       }
     }
@@ -323,32 +332,51 @@ preprocess_data <- function(data,
 #' @param bca_data The BCA dataset data frame
 #' @param merge_by The column name to use for merging datasets
 #' @param filter_criteria Optional expression for filtering the merged dataset
+#' @param bca_vars Optional vector of BCA variables to include in the merge
 #' @return A merged and preprocessed data frame ready for analysis
-create_analysis_dataset <- function(full_data, 
-                                    bca_data, 
+create_analysis_dataset <- function(full_data,
+                                    bca_data,
                                     merge_by = "etnr_id",
-                                    filter_criteria = NULL) {
+                                    filter_criteria = NULL,
+                                    bca_vars = NULL) {
   
   # Ensure merge column exists in both datasets
   if (!merge_by %in% names(full_data) || !merge_by %in% names(bca_data)) {
     stop("Merge column '", merge_by, "' not found in both datasets")
   }
   
-  # Identify common columns (besides merge column)
-  common_cols <- intersect(names(full_data), names(bca_data))
-  common_cols <- common_cols[common_cols != merge_by]
-  
-  if (length(common_cols) > 0) {
-    message("Found ", length(common_cols), " common columns besides merge column")
-    message("Common columns will be taken from full_data")
+  # If bca_vars is provided, use only those variables from bca_data
+  if (!is.null(bca_vars)) {
+    # Check if all specified variables exist in bca_data
+    missing_vars <- bca_vars[!bca_vars %in% names(bca_data)]
+    if (length(missing_vars) > 0) {
+      warning("The following BCA variables were not found: ",
+              paste(missing_vars, collapse = ", "))
+      bca_vars <- bca_vars[bca_vars %in% names(bca_data)]
+    }
     
-    # Remove common columns from bca_data to avoid duplicates
-    bca_data <- bca_data[, !names(bca_data) %in% common_cols]
+    # Select only the merge column and specified BCA variables
+    bca_data_subset <- bca_data[, c(merge_by, bca_vars)]
+    message("Using ", length(bca_vars), " specified BCA variables for merge")
+  } else {
+    # Identify common columns (besides merge column)
+    common_cols <- intersect(names(full_data), names(bca_data))
+    common_cols <- common_cols[common_cols != merge_by]
+    
+    if (length(common_cols) > 0) {
+      message("Found ", length(common_cols), " common columns besides merge column")
+      message("Common columns will be taken from full_data")
+      
+      # Remove common columns from bca_data to avoid duplicates
+      bca_data_subset <- bca_data[, !names(bca_data) %in% common_cols]
+    } else {
+      bca_data_subset <- bca_data
+    }
   }
   
   # Merge datasets
   message("Merging datasets by '", merge_by, "'")
-  merged_data <- merge(full_data, bca_data, by = merge_by, all.x = FALSE, all.y = TRUE)
+  merged_data <- merge(full_data, bca_data_subset, by = merge_by, all.x = TRUE, all.y = FALSE)
   
   message("Merged dataset has ", nrow(merged_data), " rows and ", ncol(merged_data), " columns")
   
