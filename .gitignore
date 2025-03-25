@@ -1,0 +1,32 @@
+# R specific
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# OS specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+
+# Large data files are included for this project
+# (These files are mentioned in the installation guide)
+
+# Compiled code
+*.o
+*.so
+*.dll
+
+# Output directories (optional, uncomment if needed)
+# /results/
+# /reports/
+
+# Environment variables
+.env
+.Renviron
