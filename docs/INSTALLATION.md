@@ -154,6 +154,6 @@ If you encounter package installation errors:
 
 If you encounter persistent issues:
 
-1. Check the [project issues page](https://github.com/username/liver-transplant-analysis/issues)
+1. Check the [project issues page](https://github.com/Malaeu/liver-transplant-analysis/issues)
 2. Create a new issue with detailed information about your problem
 3. Contact the project maintainer at: example@email.com

@@ -27,7 +27,7 @@
 
 ### Клонирование репозитория
 ```bash
-git clone https://github.com/username/liver-transplant-analysis.git
+git clone https://github.com/Malaeu/liver-transplant-analysis.git
 cd liver-transplant-analysis
 ```
 
